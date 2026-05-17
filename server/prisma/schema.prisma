@@ -1,0 +1,478 @@
+// CodePilot AI Workspace - Database Schema
+// Production-grade PostgreSQL schema with Prisma ORM
+
+generator client {
+  provider = "prisma-client-js"
+  // Optimize for production
+  binaryTargets = ["native"]
+  // Enable preview features if needed
+  // previewFeatures = ["fullTextSearch", "metrics"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // Direct connection URL for migrations (non-pooled)
+  // Using directUrl helps with connection stability on Neon
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+// ============================================
+// USER MANAGEMENT
+// ============================================
+
+enum UserRole {
+  ADMIN
+  TEAM_LEAD
+  DEVELOPER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model User {
+  id            String      @id @default(uuid())
+  email         String      @unique
+  password      String
+  firstName     String
+  lastName      String
+  role          UserRole    @default(DEVELOPER)
+  status        UserStatus  @default(ACTIVE)
+  avatar        String?
+  bio           String?
+  githubUsername String?
+  
+  // Timestamps
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  lastLoginAt   DateTime?
+  
+  // Relations
+  teamId        String?
+  team          Team?       @relation(fields: [teamId], references: [id])
+  
+  repositories  Repository[]
+  projects      Project[]
+  aiAnalyses    AIAnalysis[]
+  documentations Documentation[]
+  testSuites    TestSuite[]
+  debugSessions DebugSession[]
+  refactorings  Refactoring[]
+  onboardingGuides OnboardingGuide[]
+  activityLogs  ActivityLog[]
+  notifications Notification[]
+  
+  @@index([email])
+  @@index([teamId])
+  @@map("users")
+}
+
+model Team {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  avatar      String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  members     User[]
+  projects    Project[]
+  
+  @@map("teams")
+}
+
+// ============================================
+// REPOSITORY & PROJECT MANAGEMENT
+// ============================================
+
+enum RepositoryStatus {
+  PENDING
+  ANALYZING
+  ANALYZED
+  FAILED
+}
+
+model Repository {
+  id              String           @id @default(uuid())
+  name            String
+  url             String
+  description     String?
+  language        String?
+  stars           Int              @default(0)
+  forks           Int              @default(0)
+  openIssues      Int              @default(0)
+  size            Int              @default(0)
+  defaultBranch   String           @default("main")
+  isPrivate       Boolean          @default(false)
+  status          RepositoryStatus @default(PENDING)
+  
+  // GitHub metadata
+  githubId        String?          @unique
+  owner           String?
+  fullName        String?
+  
+  // Analysis metadata
+  filesCount      Int              @default(0)
+  linesOfCode     Int              @default(0)
+  dependenciesCount Int            @default(0)
+  lastAnalyzedAt  DateTime?
+  
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  
+  // Relations
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  projects        Project[]
+  aiAnalyses      AIAnalysis[]
+  documentations  Documentation[]
+  testSuites      TestSuite[]
+  techStack       TechStack[]
+  
+  @@index([userId])
+  @@index([status])
+  @@map("repositories")
+}
+
+model Project {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id])
+  
+  repositoryId String?
+  repository   Repository? @relation(fields: [repositoryId], references: [id])
+  
+  @@index([userId])
+  @@index([teamId])
+  @@map("projects")
+}
+
+model TechStack {
+  id          String   @id @default(uuid())
+  name        String
+  version     String?
+  type        String   // frontend, backend, database, devops
+  
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([repositoryId])
+  @@map("tech_stack")
+}
+
+// ============================================
+// AI SERVICES
+// ============================================
+
+enum AIAnalysisType {
+  REPOSITORY
+  CODE_QUALITY
+  SECURITY
+  PERFORMANCE
+  ARCHITECTURE
+}
+
+enum AIAnalysisStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+model AIAnalysis {
+  id          String            @id @default(uuid())
+  type        AIAnalysisType
+  status      AIAnalysisStatus  @default(PENDING)
+  
+  // Input
+  input       Json?
+  
+  // Output
+  summary     String?
+  insights    Json?
+  recommendations Json?
+  metrics     Json?
+  
+  // Metadata
+  processingTime Int?           // milliseconds
+  tokensUsed  Int?
+  
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  completedAt DateTime?
+  
+  // Relations
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  repositoryId String?
+  repository   Repository?      @relation(fields: [repositoryId], references: [id])
+  
+  @@index([userId])
+  @@index([repositoryId])
+  @@index([status])
+  @@map("ai_analyses")
+}
+
+// ============================================
+// DOCUMENTATION
+// ============================================
+
+enum DocumentationType {
+  README
+  API_DOCS
+  ARCHITECTURE
+  SETUP_GUIDE
+  CONTRIBUTING
+  CHANGELOG
+  INLINE_COMMENTS
+}
+
+model Documentation {
+  id          String            @id @default(uuid())
+  title       String
+  type        DocumentationType
+  content     String            @db.Text
+  format      String            @default("markdown") // markdown, html, json
+  
+  // Metadata
+  wordCount   Int               @default(0)
+  readingTime Int               @default(0) // minutes
+  
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  // Relations
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  repositoryId String?
+  repository   Repository?       @relation(fields: [repositoryId], references: [id])
+  
+  @@index([userId])
+  @@index([repositoryId])
+  @@map("documentations")
+}
+
+// ============================================
+// TEST GENERATION
+// ============================================
+
+enum TestFramework {
+  JEST
+  VITEST
+  MOCHA
+  PYTEST
+  JUNIT
+  RSPEC
+}
+
+model TestSuite {
+  id          String        @id @default(uuid())
+  name        String
+  framework   TestFramework
+  language    String
+  
+  // Test content
+  sourceCode  String        @db.Text
+  testCode    String        @db.Text
+  
+  // Metrics
+  testsCount  Int           @default(0)
+  coverage    Float?
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  // Relations
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  repositoryId String?
+  repository   Repository?   @relation(fields: [repositoryId], references: [id])
+  
+  @@index([userId])
+  @@index([repositoryId])
+  @@map("test_suites")
+}
+
+// ============================================
+// DEBUG ASSISTANT
+// ============================================
+
+enum DebugSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model DebugSession {
+  id          String        @id @default(uuid())
+  title       String
+  
+  // Error details
+  errorMessage String       @db.Text
+  stackTrace  String?       @db.Text
+  errorType   String?
+  
+  // AI Analysis
+  rootCause   String?       @db.Text
+  suggestions Json?
+  fixedCode   String?       @db.Text
+  severity    DebugSeverity @default(MEDIUM)
+  
+  // Metadata
+  language    String?
+  framework   String?
+  resolved    Boolean       @default(false)
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  resolvedAt  DateTime?
+  
+  // Relations
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([resolved])
+  @@map("debug_sessions")
+}
+
+// ============================================
+// REFACTORING
+// ============================================
+
+model Refactoring {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  
+  // Code
+  originalCode String  @db.Text
+  refactoredCode String @db.Text
+  language    String
+  
+  // Improvements
+  improvements Json?
+  metrics     Json?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@map("refactorings")
+}
+
+// ============================================
+// ONBOARDING
+// ============================================
+
+model OnboardingGuide {
+  id          String   @id @default(uuid())
+  title       String
+  
+  // Content
+  overview    String   @db.Text
+  setupSteps  Json
+  keyFiles    Json?
+  architecture String? @db.Text
+  conventions Json?
+  commonIssues Json?
+  
+  // Metadata
+  estimatedTime Int?   // minutes
+  difficulty  String?  // beginner, intermediate, advanced
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@map("onboarding_guides")
+}
+
+// ============================================
+// ACTIVITY & NOTIFICATIONS
+// ============================================
+
+enum ActivityType {
+  REPOSITORY_ANALYZED
+  DOCUMENTATION_GENERATED
+  TEST_GENERATED
+  DEBUG_SESSION
+  REFACTORING
+  ONBOARDING_CREATED
+  USER_LOGIN
+  USER_LOGOUT
+}
+
+model ActivityLog {
+  id          String       @id @default(uuid())
+  type        ActivityType
+  title       String
+  description String?
+  metadata    Json?
+  
+  createdAt   DateTime     @default(now())
+  
+  // Relations
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  type        NotificationType @default(INFO)
+  title       String
+  message     String
+  read        Boolean          @default(false)
+  actionUrl   String?
+  
+  createdAt   DateTime         @default(now())
+  readAt      DateTime?
+  
+  // Relations
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([read])
+  @@map("notifications")
+}
