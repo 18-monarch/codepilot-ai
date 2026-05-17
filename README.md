@@ -324,6 +324,6 @@ Developed by:
 
 GitHub:
 [https://github.com/18-monarch](https://github.com/18-monarch)
-[https://github.com/18-monarch](https://github.com/jalmitul12)
+[https://github.com/jalmitul12](https://github.com/jalmitul12)
 
 ---
